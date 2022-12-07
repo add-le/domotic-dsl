@@ -49,5 +49,5 @@ Create the DSL code with the embedded editor or use the custom cup snippet.
 - [@ubo](https://nouveau.univ-brest.fr/)
 ## License
 
-[GPL v3](https://github.com/add-le/ftp-server/blob/master/LICENSE)
+[GPL v3](https://github.com/add-le/domotic-dsl/blob/master/LICENCE)
 
