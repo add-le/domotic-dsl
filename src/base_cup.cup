@@ -1,0 +1,740 @@
+// Addwyn LE LANN Projet COMP2
+// Daniel LEDOUSSAL
+
+// Specification JCup
+import java_cup.runtime.*;
+import java.util.*;
+import java.io.*;
+ 
+
+parser code {:
+	public static void main(String args[]) throws Exception {
+		new parser(new Yylex(new InputStreamReader(System.in))).parse();
+	}
+	
+	public void syntax_error(Symbol cur_token) { 
+		// n'interrompt pas la compil... 
+		// on est par defaut dans l'etat error qui permet ensuite la recup
+		// par défaut : report_error("syntax error", null);
+		report_error("Syntaxe incorrecte <"+tokenToString(cur_token)+">", null);        
+	}
+
+	public void report_error(String message, Object info) {   
+		// n'interrompt pas la compil
+		if (info == null) System.err.println("Mon erreur <"+ ptext()+ "> ligne "+ pline() + ", colonne " + pcolumn() + " : " + message);
+		else System.err.println("Mon erreur <"+ptext()+ "> ligne "+ pline() + ", colonne " + pcolumn() + " : " +message+" : "+info);
+		System.err.println("-> mais on continue l'analyse... ");
+	}
+
+	public void unrecovered_syntax_error(Symbol cur_token) {
+    	// par defaut : report_fatal_error("Couldn't repair and continue parse", null);
+		// on n'a pas reussi a faire de la recup
+		report_fatal_error("Recuperation impossible <"+tokenToString(cur_token)+">", null);   // interrompt la compil     
+	}
+
+	public void report_fatal_error(String message, Object info) {  
+		// qd cette fct est appelee, message vaut par defaut "Couldn't repair and continue parse"
+		String m = "Mon erreur fatale <"+ ptext()+ "> ligne " + pline() + ", colonne " + pcolumn() + " : " + message;
+		if (info == null) System.err.println(m);
+		else System.err.println(m+" : "+info);
+		System.err.println("-> arrêt de l'analyse...");
+		done_parsing(); // interrompt la compil
+  	}
+
+	public int pline(){
+		return ((Yylex)getScanner()).getYyLine();
+	}
+	public int pcolumn(){
+		return ((Yylex)getScanner()).getYyColumn();
+	}
+	public String ptext(){
+		return ((Yylex)getScanner()).getYyText();
+	}
+
+public String tokenToString (Symbol token) {
+// qqs exemples pour voir...
+    switch (token.sym) {
+        case sym.CHAINE : return "CHAINE " + token.value;  
+        case sym.ENTIER : return "ENTIER " + token.value;  
+        case sym.TYPE : return "TYPE " + token.value;
+        case sym.METHODE : return "METHODE " + token.value;
+        case sym.ATTRIBUT : return "ATTRIBUT " + token.value;
+        case sym.VARIABLE : return "VARIABLE " + token.value;
+        case sym.DEFINIR : return "DEFINIR";
+        case sym.EXECUTER : return "EXECUTER";
+        case sym.ASSOCIER : return "ASSOCIER";
+        case sym.PROGRAMMER : return "PROGRAMMER";
+        case sym.MESSAGE : return "MESSAGE";
+        case sym.POURTOUT : return "POURTOUT";
+        case sym.FAIRE : return "FAIRE";
+        case sym.FAIT : return "FAIT";
+        case sym.SI : return "SI";
+        case sym.ALORS : return "ALORS";
+        case sym.SINON : return "SINON";
+        case sym.FSI : return "FSI";
+        //  ... A compléter !!
+        default : return "Token imprévu ou error";
+	}
+}
+:}
+
+
+//ACTION CODE
+action code {:
+
+PrintWriter writer = null;
+PrintWriter writeHabitat = null;
+
+ArrayList<String> tabIdent = new ArrayList<String>();
+
+ArrayList<String> tabScenario = new ArrayList<String>();
+
+Map<String, ArrayList<String>> tabAssociation = new HashMap<>();
+
+ArrayList<String> scenarioProg = new ArrayList<String>();
+
+int nbFor = 0;
+int nbProg = 0;
+int nbScenario = 0;
+int nbAppareil = 0;
+int nbInterface = 0;
+Boolean siEnCours = false;
+Boolean pourEnCours = false;
+Boolean defineEnCours = false;
+String argIdent = "";
+String argComp = "";
+String type_comp = "";
+String contenuScenario = "";
+String pourIdent = "";
+
+ArrayList<String> listTypeClef = new ArrayList<String>(Arrays.asList("eclairage", "alarme", "chauffage", "fenetre", "volet", "autre_appareil(hifi)", "autre_appareil(cafetiere)", "autre_appareil(tv)", "autre_appareil(portail)", "autre_appareil(video_proj)", "autre_appareil(lave_vaisselle)", "autre_appareil(lave_linge)", "autre_appareil(seche_linge)", "interrupteur", "mobile", "telephone", "telecommande", "tablette", "ordinateur", "autre_appareil"));
+
+ArrayList<String> listAttributClef = new ArrayList<String>(Arrays.asList("allume", "eteint", "demi", "eco", "ouvert", "ferme"));
+
+HashMap<String, Integer> tabAppareil = new HashMap<String, Integer>();
+
+HashMap<String, String> tableSymbole = new HashMap<String, String>();
+
+void exemple_de_fonction(String i1, String i2)
+{
+	String m = "Erreur syntaxique <"+i2+"> au lieu de <"+i1+">";
+	if (!(i1.equals(i2))) parser.report_error(m,null);	 
+}
+
+Boolean estBissextile(int annee) {
+		return (((annee % 4 == 0) && (annee % 100 != 0)) || (annee % 400 == 0));
+	}
+
+Boolean verifyDate(String dateChaine) {
+	String maDate = "";
+	maDate = dateChaine.substring(1, dateChaine.length()-1);
+	String[] tokenDate = maDate.split(",");
+	int annee, mois, jour, heure, minute;
+	if(tokenDate[0].equals("_")) { annee = -1; } else { annee = Integer.parseInt(tokenDate[0]); }
+	if(tokenDate[1].equals("_")) { mois = -1; } else { mois = Integer.parseInt(tokenDate[1]); }
+	if(tokenDate[2].equals("_")) { jour = -1; } else { jour = Integer.parseInt(tokenDate[2]); }
+	if(tokenDate[3].equals("_")) { heure = -1; } else { heure = Integer.parseInt(tokenDate[3]); }
+	if(tokenDate[4].equals("_")) { return false; } else { minute = Integer.parseInt(tokenDate[4]); }
+	//Verification du mois entre 1 et 12
+	if(!((mois >= 1 && mois <= 12) || mois == -1)) return false;
+	//Verification de l'annee a 4 chiffres
+	if(!((annee >= 1000 && annee <= 9999) || annee == -1)) return false;
+	//Verification du mombre de jour en fonction du mois
+	if(mois == 1 || mois == 3 || mois == 5 || mois == 7 || mois == 8 || mois == 10 || mois == 12) if(!((jour >= 1 && jour <= 31) || jour == -1)) return false;
+	if(mois == 4 || mois == 6 || mois == 9 || mois == 11) if(!((jour >= 1 && jour <= 30) || jour == -1)) return false;
+	if(mois == 2) {
+		if(estBissextile(annee)) { if(!((jour >= 1 && jour <= 29) || jour == -1)) return false; }
+		else { if(!((jour >= 1 && jour <= 28) || jour == -1)) return false; }
+	}
+	//Verification des heures
+	if(!((heure >= 0 && heure <= 23) || heure == -1)) return false;
+	if(!(minute >= 0 && minute <= 59)) return false;
+	
+	//La date est dans le bon format
+	return true;
+}
+
+Boolean verifyAction(String ident, String methode) {
+	if(!tableSymbole.containsKey(ident)) { return true; }
+	
+	String type = tableSymbole.get(ident);
+	if(type.equals("eclairage")) {
+		if(!(methode.equals("allumer") || methode.equals("eteindre") || methode.equals("tamiser"))) return false;
+	}
+	if(type.equals("volet") || type.equals("fenetre") || type.contains("portail")) {
+		if(!(methode.equals("ouvrir") || methode.equals("fermer") || methode.equals("ouvrir_partiel") || methode.equals("fermer_partiel"))) return false;
+	}
+	if(type.equals("chauffage")) {
+		if(!(methode.equals("allumer") || methode.equals("eteindre") || methode.equals("allumer_eco"))) return false;
+	}
+	if(type.equals("alarme")) {
+		if(!(methode.equals("allumer") || methode.equals("eteindre") || methode.equals("allumer_partiel") || methode.equals("fermer_partiel"))) return false;
+	}
+	if(type.contains("autre_appareil") && !type.contains("portail")) {
+		if(!(methode.equals("allumer") || methode.equals("eteindre"))) return false;
+	}
+	
+	//Bonne méthode
+	return true;
+}
+
+:}
+
+
+//TERMINAUX
+terminal PROG_DOMUS_DEBUT;
+terminal PROG_DOMUS_FIN;
+terminal DECLA_APPAREIL_DEBUT;
+terminal DECLA_APPAREIL_FIN;
+terminal DECLA_INTERFACE_DEBUT;
+terminal DECLA_INTERFACE_FIN;
+terminal DECLA_SCENARII_DEBUT;
+terminal DECLA_SCENARII_FIN;
+terminal DECLA_COMMANDE_DEBUT;
+terminal DECLA_COMMANDE_FIN;
+terminal DECLA_SCENARIO_DEBUT;
+terminal DECLA_SCENARIO_FIN;
+terminal SUPERIEUR;
+terminal VIRGULE;
+terminal POINT_VIRGULE;
+terminal POINT;
+terminal PAR_OUVERT;
+terminal PAR_FERMER;
+terminal ACC_OUVERT;
+terminal ACC_FERMER;
+terminal DEUX_POINT;
+terminal UNDERSCORE;
+terminal EGAL;
+terminal DOUBLE_EGAL;
+terminal DIFFERENT;
+terminal DEFINIR;
+terminal EXECUTER;
+terminal ASSOCIER;
+terminal PROGRAMMER;
+terminal MESSAGE;
+terminal POURTOUT;
+terminal FAIRE;
+terminal FAIT;
+terminal SI;
+terminal ALORS;
+terminal SINON;
+terminal FSI;
+
+
+//TERMINAUX TYPES
+terminal String TYPE;
+terminal String METHODE;
+terminal String ATTRIBUT;
+terminal String CHAINE;
+terminal String VARIABLE;
+terminal Integer ENTIER;
+
+
+//NON TERMINAUX
+//Programme
+non terminal prog;
+
+//Bloc appareil
+non terminal bloc_appareil;
+non terminal list_appareil;
+non terminal list_variable_appareil;
+non terminal nom_variable_appareil;
+non terminal list_def_appareil;
+
+//Bloc interface
+non terminal bloc_interface;
+non terminal list_interface;
+non terminal list_variable_interface;
+non terminal nom_variable_interface;
+
+//Bloc scenarii
+non terminal bloc_scenarii;
+non terminal list_bloc_scenario;
+non terminal bloc_scenario;
+non terminal list_instruction;
+non terminal list_variable_scenario;
+non terminal String si_parametre;
+non terminal String list_parametre_message;
+non terminal String parametre_message;
+non terminal String suite_variable_message;
+non terminal String suite_strOuMeth_message;
+non terminal String pourtout_list;
+non terminal Integer type_comparaison;
+non terminal sinon_comparaison;
+
+
+//Bloc commande
+non terminal bloc_commande;
+non terminal list_commande;
+non terminal commande;
+non terminal Boolean motclef_commande;
+non terminal diff_commande;
+non terminal String dateType;
+non terminal dateParametre;
+non terminal list_dateType;
+non terminal list_variable_commande;
+
+
+//GRAMMAIRE
+//-----------------------------------------------------------------------------------------------------------------
+//Programme
+prog                    ::= {:
+                            try {
+                                // Recevoir le fichier 
+                                File fileMaison = new File("./CMaisonUser.java");
+                                File fileHabitat = new File("./HabitatSpecific.java");
+                                // Créer un nouveau fichier
+                                fileMaison.createNewFile();
+                                fileHabitat.createNewFile();
+                             }
+                            catch (Exception e) {
+                                System.err.println(e);
+                            }
+
+                            writer = new PrintWriter("./CMaisonUser.java");
+                            writer.println("public class CMaisonUser extends CMaison {\n\tpublic CMaisonUser() {\n\t\tsuper();\n");
+
+                            writeHabitat = new PrintWriter("./HabitatSpecific.java");
+                            writeHabitat.println("import java.util.ArrayList;\npublic class HabitatSpecific extends Habitat {\n\tpublic HabitatSpecific(ArrayList<CAppareil> lapp, ArrayList<CEnsAppareil> lens, ArrayList<CScenario> lscen, ArrayList<CInterface> lint, ArrayList<CProgrammation> lprog) {\n\t\tsuper(lapp, lens, lscen, lint, lprog);\n\t}\n\n\tpublic void execScenarioNum(int num) {\n\t\tSystem.out.println(\"Execution du scenario \" + this.l_scenarios.get(num).getNomScenario() + \"...\");\n\t\tswitch(num) {");
+
+
+
+                        :}
+                        PROG_DOMUS_DEBUT bloc_appareil bloc_interface bloc_scenarii bloc_commande PROG_DOMUS_FIN
+                        {:
+                            System.out.println("Programme DOMUS correctement converti en JAVA.");
+                            
+                            //Génération du résumé du programme domotique
+                            System.out.println("=== Resume du programme domotique ===");
+                            System.out.println("Nombre appareil: " + nbAppareil);
+                            System.out.println("Nombre interface: " + nbInterface);
+                            System.out.println("Nombre scenarii: " + tabScenario.size());
+                            for(int i = 0; i < tabScenario.size(); i++) System.out.print(tabScenario.get(i) + " ");
+                            System.out.println();
+                            System.out.println("Association:");
+                            for(String key : tabAssociation.keySet()) {
+                            	List<String> ls = tabAssociation.get(key);
+                            	for(int i = 0; i < ls.size(); i++) {
+                            		System.out.println(key + " = " + ls.get(i));
+                            	}
+							}
+							System.out.println("Scenarii programmes:");
+							for(String s : scenarioProg) {
+								System.out.print(s + " ");
+							}
+							System.out.println();
+
+                            writer.println("\t\tmonHabitat = new HabitatSpecific(ma_liste_appareils, ma_liste_ens_appareils, ma_liste_scenarios, ma_liste_interfaces, ma_liste_programmations);\n\t}\n}");
+                            writer.close();
+
+                            writeHabitat.println("\t\t\tdefault:\n\t\t}\n\t}\n}");
+                            writeHabitat.close();
+                        :};
+
+
+//-----------------------------------------------------------------------------------------------------------------
+//Bloc appareil
+bloc_appareil           ::= {: writer.println("\n\t\t//Déclaration des appareils"); :} DECLA_APPAREIL_DEBUT list_appareil DECLA_APPAREIL_FIN;
+
+list_appareil           ::= list_variable_appareil list_appareil
+						| list_def_appareil list_appareil
+						| ;
+						
+list_variable_appareil  ::= TYPE:type nom_variable_appareil:ident POINT {:
+                            
+                            String typeClass = "";
+                            String arg2 = "";
+
+                            if(type.equals("eclairage")) {
+                                typeClass = "CEclairage";
+                                arg2 = "TypeAppareil.ECLAIRAGE";
+                            } else if(type.equals("fenetre")) {
+                                typeClass = "CVoletFenetre";
+                                arg2 = "TypeAppareil.FENETRE";
+                            } else if(type.equals("volet")) {
+                                typeClass = "CVoletFenetre";
+                                arg2 = "TypeAppareil.VOLET";
+                            } else if(type.equals("alarme")) {
+                                typeClass = "CAlarme";
+                                arg2 = "TypeAppareil.ALARME";
+                            } else if(type.equals("chauffage")) {
+                                typeClass = "CChauffage";
+                                arg2 = "TypeAppareil.CHAUFFAGE";
+                            } else if(type.equals("autre_appareil(hifi)")) {
+                                typeClass = "CAutreAppareil";
+                                arg2 = "TypeAppareil.AUTRE_APPAREIL_HIFI";
+                            } else if(type.equals("autre_appareil(cafetiere)")) {
+                                typeClass = "CAutreAppareil";
+                                arg2 = "TypeAppareil.AUTRE_APPAREIL_CAFE";
+                            } else if(type.equals("autre_appareil(tv)")) {
+                                typeClass = "CAutreAppareil";
+                                arg2 = "TypeAppareil.AUTRE_APPAREIL_TV";
+                            } else if(type.equals("autre_appareil(portail)")) {
+                                typeClass = "CAutreAppareil";
+                                arg2 = "TypeAppareil.AUTRE_APPAREIL_PORTAIL";
+                            } else if(type.equals("autre_appareil(video_proj)")) {
+                                typeClass = "CAutreAppareil";
+                                arg2 = "TypeAppareil.AUTRE_APPAREIL_VP";
+                            } else if(type.equals("autre_appareil(lave_vaisselle)")) {
+                                typeClass = "CAutreAppareil";
+                                arg2 = "TypeAppareil.AUTRE_APPAREIL_LV";
+                            } else if(type.equals("autre_appareil(lave_linge)")) {
+                                typeClass = "CAutreAppareil";
+                                arg2 = "TypeAppareil.AUTRE_APPAREIL_LL";
+                            } else if(type.equals("autre_appareil(seche_linge)")) {
+                                typeClass = "CAutreAppareil";
+                                arg2 = "TypeAppareil.AUTRE_APPAREIL_SL";
+                            }
+                            
+                            Collections.reverse(tabIdent);
+                            for(String idenNom : tabIdent) {
+                                writer.println("\t\t" + typeClass + " " + idenNom + " = new " + typeClass + "(\"" + idenNom + "\"," + arg2 + ");");
+                                writer.println("\t\tma_liste_appareils.add(" + idenNom + ");");
+                                tableSymbole.put(idenNom, type);
+                                nbAppareil++;
+                            }
+
+                            tabIdent.clear();
+
+
+                         :};
+
+nom_variable_appareil   ::= VARIABLE:ident VIRGULE nom_variable_appareil {: if(tableSymbole.containsKey(ident) && defineEnCours == false) {
+                        		System.out.println("Ident_unique: " + ident);
+                        	} tabIdent.add(ident); :}
+						| VARIABLE:ident {: if(tableSymbole.containsKey(ident) && defineEnCours == false) {
+                        		System.out.println("Ident_unique: " + ident);
+                        	} tabIdent.add(ident); :}
+						| error {: System.out.println("Récupération erreur syntaxique au niveau de la déclaration - déclaration non traitée"); :};
+						
+list_def_appareil       ::= DEFINIR VARIABLE:ident EGAL ACC_OUVERT {: defineEnCours = true; :} nom_variable_appareil ACC_FERMER POINT
+                        {:
+                            writer.println("\t\tCEnsAppareil " + ident + " = new CEnsAppareil(\"" + ident + "\");");
+                            Collections.reverse(tabIdent);
+                            for(String idenNom : tabIdent) {
+                                writer.println("\t\t" + ident + ".addAppareil(" + idenNom + ");");
+                            }
+                            tabIdent.clear();
+
+                            writer.println("\t\tma_liste_ens_appareils.add(" + ident + ");");
+
+                            defineEnCours = false;
+                        :};
+
+
+//-----------------------------------------------------------------------------------------------------------------
+//Bloc interface
+bloc_interface          ::= {: writer.println("\n\t\t//Déclaration des interfaces"); :} DECLA_INTERFACE_DEBUT list_interface DECLA_INTERFACE_FIN;
+
+list_interface          ::= list_variable_interface list_interface
+                        | ;
+
+list_variable_interface ::= TYPE:type nom_variable_interface POINT
+                        {:
+                            String arg2 = "";
+
+                            if(type.equals("interrupteur")) {
+                                arg2 = "TypeInterface.INTERRUPTEUR";
+                            } else if(type.equals("mobile")) {
+                                arg2 = "TypeInterface.MOBILE";
+                            } else if(type.equals("telephone")) {
+                                arg2 = "TypeInterface.TELEPHONE";
+                            } else if(type.equals("telecommande")) {
+                                arg2 = "TypeInterface.TELECOMMANDE";
+                            } else if(type.equals("tablette")) {
+                                arg2 = "TypeInterface.TABLETTE";
+                            } else if(type.equals("ordinateur")) {
+                                arg2 = "TypeInterface.ORDINATEUR";
+                            }
+                            
+                            Collections.reverse(tabIdent);
+                            for(String idenNom : tabIdent) {
+                                writer.println("\t\tCInterface " + idenNom + " = new CInterface(\"" + idenNom + "\", " + arg2 + ");");
+                                writer.println("\t\tma_liste_interfaces.add(" + idenNom + ");");
+                                tableSymbole.put(idenNom, type);
+                                nbInterface++;
+                            }
+
+                            tabIdent.clear();
+                        
+                        :};
+
+nom_variable_interface  ::= VARIABLE:ident VIRGULE nom_variable_interface {: tabIdent.add(ident); :}
+						| VARIABLE:ident {: tabIdent.add(ident); :}
+                        | error {: System.out.println("Récupération erreur syntaxique au niveau de la déclaration - déclaration non traitée"); :};
+
+
+//-----------------------------------------------------------------------------------------------------------------
+//Bloc scenarii
+bloc_scenarii           ::= {: writer.println("\n\t\t//Déclaration des scenarii"); :}DECLA_SCENARII_DEBUT list_bloc_scenario DECLA_SCENARII_FIN;
+
+list_bloc_scenario      ::= bloc_scenario list_bloc_scenario
+						| ;
+
+bloc_scenario           ::= DECLA_SCENARIO_DEBUT VARIABLE:nom SUPERIEUR
+                        {: 
+                            tabScenario.add(nom);
+                            writeHabitat.println("\t\t\tcase " + nbScenario + ":");
+                            nbScenario++;
+                        :} list_instruction DECLA_SCENARIO_FIN VARIABLE SUPERIEUR
+                        {:
+                            writeHabitat.println("\t\t\tbreak;\n");
+
+                            writer.println("\t\tString " + nom + "_contenu = \n" + contenuScenario.substring(0, contenuScenario.length()-2) + ";\n");
+                            writer.println("\t\tCScenario " + nom + " = new CScenario(\"" + nom + "\", " + nom + "_contenu);");
+                            writer.println("\t\tma_liste_scenarios.add(" + nom + ");");
+                        :}
+                        | error {: System.out.println("Récupération erreur syntaxique au niveau de la déclaration - déclaration non traitée"); :};
+
+list_instruction        ::= list_variable_scenario list_instruction
+						| ;
+
+list_variable_scenario  ::= MESSAGE PAR_OUVERT list_parametre_message:texte PAR_FERMER POINT_VIRGULE
+                        {:
+                            writeHabitat.println("\t\t\t\tSystem.out.println(" + texte + ");");
+                            contenuScenario += ("\"System.out.println(message);\\n\" +\n");
+                        :}
+                        | SI PAR_OUVERT si_parametre:arg1 type_comparaison:type_de_la_compa si_parametre:arg2 PAR_FERMER ALORS 
+                        {:  
+                            if(listAttributClef.contains(arg1)) {
+                                argIdent = arg2;
+                                argComp = arg1;
+                            } else {
+                                argIdent = arg1;
+                                argComp = arg2;
+                            }
+                            
+                            if(type_de_la_compa == 1) {
+                            	type_comp = "";
+                            } else if(type_de_la_compa == 2) {;
+                            	type_comp = "!";
+                            }
+                            
+
+                            if(!pourEnCours) {
+		                        nbFor++;
+		                        writeHabitat.println("\t\t\t\tfor(CAppareil appareil" + nbFor + ": this.l_appareils)");
+		                        contenuScenario += "\"for(CAppareil appareil" + nbFor + ": this.l_appareils)\" +\n";
+		                        writeHabitat.println("\t\t\t\tif(appareil" + nbFor + ".getNomAppareil().equals(\"" + argIdent + "\"))");
+		                        contenuScenario += "\"if(appareil" + nbFor + ".getNomAppareil().equals(\\\"" + argIdent + "\\\"))\\n\" +\n";
+		                        tabAppareil.put(argIdent, nbFor);
+		                    }
+		                    
+		                    if(!listAttributClef.contains(arg1) && !listAttributClef.contains(arg2)) {
+		                    	nbFor++;
+		                        writeHabitat.println("\t\t\t\tfor(CAppareil appareil" + nbFor + ": this.l_appareils)");
+		                        contenuScenario += "\"for(CAppareil appareil" + nbFor + ": this.l_appareils)\" +\n";
+		                        writeHabitat.println("\t\t\t\tif(appareil" + nbFor + ".getNomAppareil().equals(\"" + argComp + "\"))");
+		                        contenuScenario += "\"if(appareil" + nbFor + ".getNomAppareil().equals(\\\"" + argComp + "\\\"))\\n\" +\n";
+		                        tabAppareil.put(argComp, nbFor);
+		                        writeHabitat.println("\t\t\t\tif(" + type_comp + "appareil" + tabAppareil.get(arg1) + ".etatAppareil.equals(appareil" + tabAppareil.get(arg2) + ".etatAppareil)) {");
+                            	contenuScenario += "\"if(" + type_comp + "appareil" + tabAppareil.get(arg1) + ".etatAppareil.equals(appareil" + tabAppareil.get(arg2) + ".etatAppareil)) {\\n\" +\n";
+		                    } else {
+		                    	writeHabitat.println("\t\t\t\tif(" + type_comp + "appareil" + nbFor + ".etatAppareil.equals(TypeEtatAppareil." + argComp.toUpperCase() + ")) {");
+                            	contenuScenario += "\"if(" + type_comp + "appareil" + nbFor + ".etatAppareil.equals(TypeEtatAppareil." + argComp.toUpperCase() + ")) {\\n\" +\n";
+		                    }
+
+                            siEnCours = true;
+                        :} list_instruction sinon_comparaison
+                        | VARIABLE:ident POINT METHODE:methode POINT_VIRGULE
+                        {:
+                        	if(!tableSymbole.containsKey(ident)) { System.out.println("Action1: " + ident); }
+                        	if(!(verifyAction(ident, methode))) { System.out.println("Action2: " + ident + " " + methode + " non compatible"); }
+                        
+                            if(siEnCours && !pourEnCours) {
+                            	nbFor++;
+                                writeHabitat.println("\t\t\t\tfor(CAppareil appareil" + nbFor + " : this.l_appareils)");
+                                contenuScenario += "\"for(CAppareil appareil" + nbFor + " : this.l_appareils)\\n\" +\n";
+                                writeHabitat.println("\t\t\t\tif(appareil" + nbFor + ".getNomAppareil().equals(\"" + ident + "\"))");
+                                contenuScenario += "\"if(appareil" + nbFor + ".getNomAppareil().equals(\\\"" + ident + "\\\"))\\n\" +\n";
+                                tabAppareil.put(ident, nbFor);
+                                writeHabitat.println("\t\t\t\tappareil" + tabAppareil.get(ident) + ".appliquer(TypeActionAppareil." + methode.toUpperCase() + ");");
+                            	contenuScenario += "\"appareil" + tabAppareil.get(ident) + ".appliquer(TypeActionAppareil." + methode.toUpperCase() + ");\\n\" +\n";
+                               
+                                siEnCours = false;
+                            } else if(!pourEnCours) {
+                            	nbFor++;
+                                writeHabitat.println("\t\t\t\tfor(CAppareil appareil" + nbFor + ": this.l_appareils)");
+                                contenuScenario += "\"for(CAppareil appareil" + nbFor + ": this.l_appareils)\" +\n";
+                                writeHabitat.println("\t\t\t\tif(appareil" + nbFor + ".getNomAppareil().equals(\"" + ident + "\"))");
+                                contenuScenario += "\"if(appareil" + nbFor + ".getNomAppareil().equals(\\\"" + ident + "\\\"))\\n\" +\n";
+                                tabAppareil.put(ident, nbFor);
+                                writeHabitat.println("\t\t\t\tappareil" + tabAppareil.get(ident) + ".appliquer(TypeActionAppareil." + methode.toUpperCase() + ");");
+                            	contenuScenario += "\"appareil" + tabAppareil.get(ident) + ".appliquer(TypeActionAppareil." + methode.toUpperCase() + ");\\n\" +\n";
+                            } else if(!siEnCours && pourEnCours) { 
+                            writeHabitat.println("\t\t\t\tappareil" + tabAppareil.get(ident) + ".appliquer(TypeActionAppareil." + methode.toUpperCase() + ");");
+                            contenuScenario += "\"appareil" + tabAppareil.get(ident) + ".appliquer(TypeActionAppareil." + methode.toUpperCase() + ");\\n\" +\n";
+                           	}
+                           		else {
+                           			nbFor++;
+                                writeHabitat.println("\t\t\t\tfor(CAppareil appareil" + nbFor + ": this.l_appareils)");
+                                contenuScenario += "\"for(CAppareil appareil" + nbFor + ": this.l_appareils)\" +\n";
+                                writeHabitat.println("\t\t\t\tif(appareil" + nbFor + ".getNomAppareil().equals(\"" + ident + "\"))");
+                                contenuScenario += "\"if(appareil" + nbFor + ".getNomAppareil().equals(\\\"" + ident + "\\\"))\\n\" +\n";
+								if(!ident.equals(pourIdent)) { tabAppareil.put(ident, nbFor); }
+                                writeHabitat.println("\t\t\t\tappareil" + tabAppareil.get(ident) + ".appliquer(TypeActionAppareil." + methode.toUpperCase() + ");");
+                            	contenuScenario += "\"appareil" + tabAppareil.get(ident) + ".appliquer(TypeActionAppareil." + methode.toUpperCase() + ");\\n\" +\n";
+                           		}
+                          	pourEnCours = false;
+                            
+                        :}
+                        | EXECUTER VARIABLE:ident POINT_VIRGULE
+                        {:
+                            writeHabitat.println("\t\t\t\tthis.execScenarioNum(" + tabScenario.indexOf(ident) + ");");
+                            contenuScenario += "\"this.execScenarioNum(" + tabScenario.indexOf(ident) + ");\\n\" +\n";
+                        :}
+                        | POURTOUT VARIABLE:ident DEUX_POINT pourtout_list:type 
+                        {:
+                        	tableSymbole.put(ident, type);
+                        	pourIdent = ident;
+                        	pourEnCours = true;
+                        	nbFor++;
+                        	tabAppareil.put(ident, nbFor);
+                            if(listTypeClef.contains(type)) {
+                                writeHabitat.println("\t\t\t\tfor(CAppareil appareil" + nbFor + " : this.l_appareils)");
+                                contenuScenario += "\"for(CAppareil appareil" + nbFor + " : this.l_appareils)\\n\" +\n";
+                                if(type.equals("autre_appareil")) {
+                                    writeHabitat.println("\t\t\t\tif(appareil" + nbFor + ".estTypeAutreAppareil())");
+                                    contenuScenario += "\"if(appareil" + nbFor + ".estTypeAutreAppareil())\\n\" +\n";
+                                } else {
+                                    if(type.contains("autre_appareil")) {
+                                        String argument = "";
+                                        if(type.equals("autre_appareil(hifi)")) {
+                                            argument = "TypeAppareil.AUTRE_APPAREIL_HIFI";
+                                        } else if(type.equals("autre_appareil(cafetiere)")) {
+                                            argument = "TypeAppareil.AUTRE_APPAREIL_CAFE";
+                                        } else if(type.equals("autre_appareil(tv)")) {
+                                            argument = "TypeAppareil.AUTRE_APPAREIL_TV";
+                                        } else if(type.equals("autre_appareil(portail)")) {
+                                            argument = "TypeAppareil.AUTRE_APPAREIL_PORTAIL";
+                                        } else if(type.equals("autre_appareil(video_proj)")) {
+                                            argument = "TypeAppareil.AUTRE_APPAREIL_VP";
+                                        } else if(type.equals("autre_appareil(lave_vaisselle)")) {
+                                            argument = "TypeAppareil.AUTRE_APPAREIL_LV";
+                                        } else if(type.equals("autre_appareil(lave_linge)")) {
+                                            argument = "TypeAppareil.AUTRE_APPAREIL_LL";
+                                        } else if(type.equals("autre_appareil(seche_linge)")) {
+                                            argument = "TypeAppareil.AUTRE_APPAREIL_SL";
+                                        }
+                                        writeHabitat.println("\t\t\t\tif(appareil" + nbFor + ".typeAppareil.equals(" + argument + "))");
+                                        contenuScenario += "\"if(appareil" + nbFor + ".typeAppareil.equals(" + argument + "))\\n\" +\n";
+                                    } else {
+                                        writeHabitat.println("\t\t\t\tif(appareil" + nbFor + ".typeAppareil.equals(TypeAppareil." + type.toUpperCase() + "))");
+                                        contenuScenario += "\"if(appareil" + nbFor + ".typeAppareil.equals(TypeAppareil." + type.toUpperCase() + "))\\n\" +\n";
+                                    }
+                                }
+                            } else {
+                                writeHabitat.println("\t\t\t\tfor(CEnsAppareil ensAppareil : this.l_ensembles)");
+                                contenuScenario += "\"for(CEnsAppareil ensAppareil : this.l_ensembles)\\n\" +\n";
+                                writeHabitat.println("\t\t\t\tif(ensAppareil.nomEnsAppareil.equals(\"" + type + "\"))");
+                                contenuScenario += "\"if(ensAppareil.nomEnsAppareil.equals(\\\"" + type + "\\\"))\\n\" +\n";
+                                writeHabitat.println("\t\t\t\tfor(CAppareil appareil" + nbFor + " : ensAppareil.lAppareils)");
+                                contenuScenario += "\"for(CAppareil appareil" + nbFor + " : ensAppareil.lAppareils)\\n\" +\n";
+                            }
+                        :} FAIRE {: writeHabitat.println("\t\t\t\t{"); :} list_instruction FAIT {: pourEnCours = false; writeHabitat.println("\t\t\t\t}"); :} POINT_VIRGULE;
+                        
+si_parametre			::= VARIABLE:ident POINT METHODE {: RESULT=ident; :}
+						| ATTRIBUT:attribut {: RESULT=attribut; :};
+                        
+list_parametre_message	::= parametre_message:arg list_parametre_message:arg_concat {: RESULT=arg + arg_concat; :}
+						| {: RESULT=""; :};
+						
+parametre_message		::= VARIABLE:ident suite_variable_message:suite
+						{:
+							if(suite.contains("etat")) {
+								suite = suite.replace("etat", "");
+								RESULT="appareil" + tabAppareil.get(ident) + ".getEtatAppareil()" + suite;
+							}
+							else {
+								RESULT="appareil" + tabAppareil.get(ident) + ".getNomAppareil()" + suite;
+							}
+						:}
+						| CHAINE:chaine suite_strOuMeth_message:virgule {: RESULT=chaine + virgule; :};
+
+suite_variable_message	::= POINT METHODE:methode suite_strOuMeth_message:virgule {: RESULT=methode + virgule; :}
+						| VIRGULE {: RESULT="+"; :}
+						| {: RESULT=""; :};
+
+suite_strOuMeth_message	::= VIRGULE {: RESULT="+"; :}
+						| {: RESULT=""; :} ;
+  
+pourtout_list			::= TYPE:type {: RESULT=type; :}
+                        | VARIABLE:ident {: RESULT=ident; :};
+
+type_comparaison        ::= DOUBLE_EGAL {: RESULT=1; :}
+                        | DIFFERENT {: RESULT=2; :};
+
+sinon_comparaison       ::= SINON
+                        {:
+                            writeHabitat.println("\t\t\t\t}");
+                            contenuScenario += "\"}\\n\" +\n";
+                            writeHabitat.println("\t\t\t\telse {");
+                            contenuScenario += "\"else {\\n\" +\n";
+                        :} list_instruction {: writeHabitat.println("\t\t\t\t}"); contenuScenario += "\"}\\n\" +\n"; :} FSI POINT_VIRGULE
+                        | FSI POINT_VIRGULE {: writeHabitat.println("\t\t\t\t}"); contenuScenario += "\"}\\n\" +\n"; :};
+                        
+
+//-----------------------------------------------------------------------------------------------------------------
+//Bloc commande
+bloc_commande           ::= {: writer.println("\n\t\t//Déclaration des commandes"); :} DECLA_COMMANDE_DEBUT list_commande DECLA_COMMANDE_FIN;
+
+list_commande           ::= commande list_commande
+						| ;
+
+commande                ::= motclef_commande:typeCommande VARIABLE:ident EGAL diff_commande POINT
+                        {:
+                            //Programmer
+                            if(typeCommande) {
+                                if(!tabScenario.contains(ident)) { System.out.println("Comm: " + ident); }
+                                nbProg++;
+                                writer.println("\t\tCProgrammation p" + nbProg + " = new CProgrammation(\"" + ident + "\");");
+                                Collections.reverse(tabIdent);
+                                for(String valeurCommande : tabIdent) {
+                                    writer.println("\t\tp" + nbProg + ".addDate(new CDate" + valeurCommande + ");");
+                                }
+                                tabIdent.clear();
+                                writer.println("\t\tma_liste_programmations.add(p" + nbProg + ");");
+                                scenarioProg.add(ident);
+                            }
+                            //Associer
+                            else{
+                                if(!tableSymbole.containsKey(ident)) { System.out.println("Comm: " + ident); }
+                                Collections.reverse(tabIdent);
+                                ArrayList<String> values = new ArrayList<String>();
+                                for(String valeurCommande : tabIdent) {
+                                    writer.println("\t\t" + ident + ".addScenarioAssocie(\"" + valeurCommande + "\");");
+                                    if(!tabScenario.contains(valeurCommande)) { System.out.println("Comm: " + valeurCommande); }
+                                    values.add(valeurCommande);
+                                }
+                                tabAssociation.put(ident, values);
+                            }
+                            tabIdent.clear();
+
+                        :};
+
+motclef_commande        ::= ASSOCIER {: RESULT=false; :}
+						| PROGRAMMER {: RESULT=true; :};
+
+diff_commande           ::= VARIABLE:ident {: tabIdent.add(ident); :}
+						| dateType:dateIdent
+						{:
+							if(!verifyDate(dateIdent)) {
+								System.out.println("Format_Date: " + dateIdent);
+							}
+							tabIdent.add(dateIdent);
+						:}
+						| ACC_OUVERT list_dateType ACC_FERMER
+						| ACC_OUVERT list_variable_commande ACC_FERMER;
+
+dateType                ::= PAR_OUVERT dateParametre:annee VIRGULE dateParametre:mois VIRGULE dateParametre:jour VIRGULE dateParametre:heure VIRGULE dateParametre:minute PAR_FERMER
+                        {: RESULT="(" + annee + "," + mois + "," + jour + "," + heure + "," + minute + ")"; :};
+
+dateParametre           ::= ENTIER:n {: RESULT=n; :}
+						| UNDERSCORE {: RESULT=-1; :};
+
+list_dateType           ::= dateType:dateIdent VIRGULE list_dateType {: tabIdent.add(dateIdent); :}
+						| dateType:dateIdent {: tabIdent.add(dateIdent); :};
+
+list_variable_commande  ::= VARIABLE:ident VIRGULE list_variable_commande {: tabIdent.add(ident); :}
+						| VARIABLE:ident {: tabIdent.add(ident); :};
+
